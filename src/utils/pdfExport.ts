@@ -478,6 +478,8 @@ export function generateClientPresentationPdf(
       : 'run-of-show';
   const filename = `${safeSlug || 'celebration'}-${scopeSlug}.pdf`;
 
-  doc.save(filename);
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    doc.save(filename);
+  }
   return filename;
 }

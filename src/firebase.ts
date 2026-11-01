@@ -10,15 +10,11 @@ import {
   signOut,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import appletConfig from '../firebase-applet-config.json';
 
 export const firebaseConfig = {
-  apiKey: 'AIzaSyB15dBeuL1eDZnhVj5uIX1qwK75uPDkpGI',
-  authDomain: 'date-87c48.firebaseapp.com',
-  projectId: 'date-87c48',
-  storageBucket: 'date-87c48.firebasestorage.app',
-  messagingSenderId: '532583969643',
-  appId: '1:532583969643:web:3681a6aea4f055ee4c522e',
-  measurementId: 'G-LVD44QLSFM',
+  ...appletConfig,
+  measurementId: appletConfig.measurementId || 'G-LVD44QLSFM',
 };
 
 export const app = initializeApp(firebaseConfig);
@@ -27,7 +23,7 @@ export let analytics: Analytics | null = null;
 if (typeof window !== 'undefined') {
   isAnalyticsSupported()
     .then((supported) => {
-      if (supported) {
+      if (supported && firebaseConfig.measurementId) {
         analytics = getAnalytics(app);
       }
     })
@@ -36,7 +32,7 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export const db = getFirestore(app);
+export const db = getFirestore(app, appletConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

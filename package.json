@@ -9,7 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:rules": "eslint firestore.rules && vitest run firestore.rules.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
@@ -39,6 +41,7 @@
     "eslint": "^10.14.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

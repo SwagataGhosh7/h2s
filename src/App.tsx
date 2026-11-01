@@ -16,6 +16,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import {
   Calendar,
@@ -81,6 +82,12 @@ import { ClientPdfModal } from './components/ClientPdfModal';
 import { AuthModal } from './components/AuthModal';
 import { ProfileDashboard } from './components/ProfileDashboard';
 import { generateClientPresentationPdf, PdfExportScope } from './utils/pdfExport';
+import {
+  computeEventMetrics,
+  filterBudgetItems,
+  filterTimelineItems,
+  filterVendors,
+} from './utils/analytics';
 
 type WorkspaceTab = 'overview' | 'budget' | 'timeline' | 'vendors' | 'ai_collab' | 'profile';
 
@@ -520,36 +527,28 @@ export default function App() {
   // ===========================================================================
   // 5. Computed Metrics (Tabular Numerals)
   // ===========================================================================
-  const metrics = useMemo(() => {
-    const totalEstimated = budgetItems.reduce((sum, item) => sum + item.estimatedAmount, 0);
-    const totalActual = budgetItems.reduce((sum, item) => sum + item.actualAmount, 0);
-    const budgetLimit = activeEvent?.totalBudgetLimit || 1;
-    const utilizationPct = Math.round((totalEstimated / Math.max(1, budgetLimit)) * 100);
-
-    const completedTimeline = timelineItems.filter((t) => t.status === 'completed').length;
-    const confirmedVendors = vendors.filter(
-      (v) => v.contractStatus === 'confirmed' || v.contractStatus === 'contracted'
-    ).length;
-
-    const confirmedGuestHeadcount = guests
-      .filter((g) => g.rsvpStatus === 'confirmed')
-      .reduce((sum, g) => sum + g.partySize, 0);
-    const totalInvitedHeadcount = guests.reduce((sum, g) => sum + g.partySize, 0);
-
-    return {
-      totalEstimated,
-      totalActual,
-      remainingBudget: (activeEvent?.totalBudgetLimit || 0) - totalEstimated,
-      utilizationPct,
-      completedTimeline,
-      confirmedVendors,
-      confirmedGuestHeadcount,
-      totalInvitedHeadcount,
-    };
-  }, [budgetItems, timelineItems, vendors, guests, activeEvent?.totalBudgetLimit]);
+  const metrics = useMemo(
+    () =>
+      computeEventMetrics(
+        budgetItems,
+        timelineItems,
+        vendors,
+        guests,
+        activeEvent?.totalBudgetLimit || 1,
+        activeEvent?.guestCountEstimate || 1
+      ),
+    [
+      budgetItems,
+      timelineItems,
+      vendors,
+      guests,
+      activeEvent?.totalBudgetLimit,
+      activeEvent?.guestCountEstimate,
+    ]
+  );
 
   // ===========================================================================
-  // 6. Core Firestore Mutations & GenAI Seeding
+  // 6. Core Firestore Mutations & GenAI Seeding (Atomic Batch Writes)
   // ===========================================================================
   const populateEventSubcollections = async (
     eventId: string,
@@ -597,6 +596,7 @@ export default function App() {
   ) => {
     if (!user) return;
     const safeCollabs = sanitizeCollaborators(collaboratorUids);
+    const batch = writeBatch(db);
 
     // 1. Budget Items
     for (const b of source.budgetItems || []) {
@@ -617,25 +617,20 @@ export default function App() {
         ? b.paymentStatus
         : 'planned';
 
-      const path = `events/${eventId}/budgetItems/${itemId}`;
-      try {
-        await setDoc(doc(db, path), {
-          eventId,
-          eventOwnerId,
-          authorId: user.uid,
-          title: sanitizeString(b.title, BLUEPRINT_CONSTRAINTS.BUDGET_TITLE_MAX, 'Budget Line'),
-          category: validCat,
-          estimatedAmount: sanitizeNumber(b.estimatedAmount, 0, 100000000, 1000),
-          actualAmount: sanitizeNumber(b.actualAmount, 0, 100000000, 0),
-          paymentStatus: validStatus,
-          notes: sanitizeString(b.notes, BLUEPRINT_CONSTRAINTS.BUDGET_NOTES_MAX, ''),
-          collaboratorUids: safeCollabs,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      }
+      batch.set(doc(db, `events/${eventId}/budgetItems/${itemId}`), {
+        eventId,
+        eventOwnerId,
+        authorId: user.uid,
+        title: sanitizeString(b.title, BLUEPRINT_CONSTRAINTS.BUDGET_TITLE_MAX, 'Budget Line'),
+        category: validCat,
+        estimatedAmount: sanitizeNumber(b.estimatedAmount, 0, 100000000, 1000),
+        actualAmount: sanitizeNumber(b.actualAmount, 0, 100000000, 0),
+        paymentStatus: validStatus,
+        notes: sanitizeString(b.notes, BLUEPRINT_CONSTRAINTS.BUDGET_NOTES_MAX, ''),
+        collaboratorUids: safeCollabs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     }
 
     // 2. Timeline Items
@@ -656,29 +651,24 @@ export default function App() {
         ? t.status
         : 'upcoming';
 
-      const path = `events/${eventId}/timelineItems/${itemId}`;
-      try {
-        await setDoc(doc(db, path), {
-          eventId,
-          eventOwnerId,
-          authorId: user.uid,
-          timeSlot: sanitizeString(t.timeSlot, BLUEPRINT_CONSTRAINTS.TIMELINE_SLOT_MAX, '17:00'),
-          title: sanitizeString(t.title, BLUEPRINT_CONSTRAINTS.TIMELINE_TITLE_MAX, 'Milestone'),
-          phase: validPhase,
-          leadPerson: sanitizeString(
-            t.leadPerson,
-            BLUEPRINT_CONSTRAINTS.TIMELINE_LEAD_MAX,
-            user.displayName || 'Lead Producer'
-          ),
-          status: validStatus,
-          notes: sanitizeString(t.notes, BLUEPRINT_CONSTRAINTS.TIMELINE_NOTES_MAX, ''),
-          collaboratorUids: safeCollabs,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      }
+      batch.set(doc(db, `events/${eventId}/timelineItems/${itemId}`), {
+        eventId,
+        eventOwnerId,
+        authorId: user.uid,
+        timeSlot: sanitizeString(t.timeSlot, BLUEPRINT_CONSTRAINTS.TIMELINE_SLOT_MAX, '17:00'),
+        title: sanitizeString(t.title, BLUEPRINT_CONSTRAINTS.TIMELINE_TITLE_MAX, 'Milestone'),
+        phase: validPhase,
+        leadPerson: sanitizeString(
+          t.leadPerson,
+          BLUEPRINT_CONSTRAINTS.TIMELINE_LEAD_MAX,
+          user.displayName || 'Lead Producer'
+        ),
+        status: validStatus,
+        notes: sanitizeString(t.notes, BLUEPRINT_CONSTRAINTS.TIMELINE_NOTES_MAX, ''),
+        collaboratorUids: safeCollabs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     }
 
     // 3. Vendors
@@ -703,37 +693,32 @@ export default function App() {
         ? v.contractStatus
         : 'shortlisted';
 
-      const path = `events/${eventId}/vendors/${vendorId}`;
-      try {
-        await setDoc(doc(db, path), {
-          eventId,
-          eventOwnerId,
-          authorId: user.uid,
-          vendorName: sanitizeString(
-            v.vendorName,
-            BLUEPRINT_CONSTRAINTS.VENDOR_NAME_MAX,
-            'Partner Studio'
-          ),
-          serviceType: validService,
-          contractStatus: validContract,
-          quotedPrice: sanitizeNumber(v.quotedPrice, 0, 100000000, 1500),
-          contactPerson: sanitizeString(
-            v.contactPerson,
-            BLUEPRINT_CONSTRAINTS.VENDOR_CONTACT_MAX,
-            'Studio Lead'
-          ),
-          deliverableNotes: sanitizeString(
-            v.deliverableNotes,
-            BLUEPRINT_CONSTRAINTS.VENDOR_NOTES_MAX,
-            ''
-          ),
-          collaboratorUids: safeCollabs,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      }
+      batch.set(doc(db, `events/${eventId}/vendors/${vendorId}`), {
+        eventId,
+        eventOwnerId,
+        authorId: user.uid,
+        vendorName: sanitizeString(
+          v.vendorName,
+          BLUEPRINT_CONSTRAINTS.VENDOR_NAME_MAX,
+          'Partner Studio'
+        ),
+        serviceType: validService,
+        contractStatus: validContract,
+        quotedPrice: sanitizeNumber(v.quotedPrice, 0, 100000000, 1500),
+        contactPerson: sanitizeString(
+          v.contactPerson,
+          BLUEPRINT_CONSTRAINTS.VENDOR_CONTACT_MAX,
+          'Studio Lead'
+        ),
+        deliverableNotes: sanitizeString(
+          v.deliverableNotes,
+          BLUEPRINT_CONSTRAINTS.VENDOR_NOTES_MAX,
+          ''
+        ),
+        collaboratorUids: safeCollabs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     }
 
     // 4. Guests
@@ -742,28 +727,23 @@ export default function App() {
       const validRsvp: RsvpStatus = ['confirmed', 'invited', 'declined'].includes(g.rsvpStatus)
         ? g.rsvpStatus
         : 'invited';
-      const path = `events/${eventId}/guests/${guestId}`;
-      try {
-        await setDoc(doc(db, path), {
-          eventId,
-          eventOwnerId,
-          authorId: user.uid,
-          guestName: sanitizeString(g.guestName, BLUEPRINT_CONSTRAINTS.GUEST_NAME_MAX, 'Guest'),
-          partySize: sanitizeNumber(g.partySize, 1, 50, 2),
-          rsvpStatus: validRsvp,
-          tableGroup: sanitizeString(
-            g.tableGroup,
-            BLUEPRINT_CONSTRAINTS.GUEST_TABLE_MAX,
-            'Main Dining'
-          ),
-          dietaryNotes: sanitizeString(g.dietaryNotes, BLUEPRINT_CONSTRAINTS.GUEST_DIETARY_MAX, ''),
-          collaboratorUids: safeCollabs,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      }
+      batch.set(doc(db, `events/${eventId}/guests/${guestId}`), {
+        eventId,
+        eventOwnerId,
+        authorId: user.uid,
+        guestName: sanitizeString(g.guestName, BLUEPRINT_CONSTRAINTS.GUEST_NAME_MAX, 'Guest'),
+        partySize: sanitizeNumber(g.partySize, 1, 50, 2),
+        rsvpStatus: validRsvp,
+        tableGroup: sanitizeString(
+          g.tableGroup,
+          BLUEPRINT_CONSTRAINTS.GUEST_TABLE_MAX,
+          'Main Dining'
+        ),
+        dietaryNotes: sanitizeString(g.dietaryNotes, BLUEPRINT_CONSTRAINTS.GUEST_DIETARY_MAX, ''),
+        collaboratorUids: safeCollabs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     }
 
     // 5. Ideas
@@ -778,37 +758,38 @@ export default function App() {
       ].includes(idea.pillar)
         ? idea.pillar
         : 'atmosphere';
-      const path = `events/${eventId}/ideas/${ideaId}`;
-      try {
-        await setDoc(doc(db, path), {
-          eventId,
-          eventOwnerId,
-          authorId: user.uid,
-          authorName: sanitizeString(
-            user.displayName || 'Lead Planner',
-            BLUEPRINT_CONSTRAINTS.OWNER_NAME_MAX,
-            'Lead Planner'
-          ),
-          title: sanitizeString(idea.title, BLUEPRINT_CONSTRAINTS.IDEA_TITLE_MAX, 'Concept Card'),
-          pillar: validPillar,
-          description: sanitizeString(
-            idea.description,
-            BLUEPRINT_CONSTRAINTS.IDEA_DESC_MAX,
-            'Bespoke design element.'
-          ),
-          estimatedCostImpact: sanitizeString(
-            idea.estimatedCostImpact,
-            BLUEPRINT_CONSTRAINTS.IDEA_COST_MAX,
-            'Included in target budget'
-          ),
-          votesCount: 1,
-          collaboratorUids: safeCollabs,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      }
+      batch.set(doc(db, `events/${eventId}/ideas/${ideaId}`), {
+        eventId,
+        eventOwnerId,
+        authorId: user.uid,
+        authorName: sanitizeString(
+          user.displayName || 'Lead Planner',
+          BLUEPRINT_CONSTRAINTS.OWNER_NAME_MAX,
+          'Lead Planner'
+        ),
+        title: sanitizeString(idea.title, BLUEPRINT_CONSTRAINTS.IDEA_TITLE_MAX, 'Concept Card'),
+        pillar: validPillar,
+        description: sanitizeString(
+          idea.description,
+          BLUEPRINT_CONSTRAINTS.IDEA_DESC_MAX,
+          'Bespoke design element.'
+        ),
+        estimatedCostImpact: sanitizeString(
+          idea.estimatedCostImpact,
+          BLUEPRINT_CONSTRAINTS.IDEA_COST_MAX,
+          'Included in target budget'
+        ),
+        votesCount: 1,
+        collaboratorUids: safeCollabs,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    try {
+      await batch.commit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `events/${eventId}`);
     }
   };
 
@@ -1604,31 +1585,19 @@ export default function App() {
 
   // Filtered collections
   const filteredBudgetItems = useMemo(
-    () =>
-      budgetFilter === 'all'
-        ? budgetItems
-        : budgetItems.filter((b) => b.category === budgetFilter),
+    () => filterBudgetItems(budgetItems, budgetFilter),
     [budgetItems, budgetFilter]
   );
 
   const filteredTimelineItems = useMemo(
-    () =>
-      timelineFilter === 'all'
-        ? timelineItems
-        : timelineItems.filter((t) => t.phase === timelineFilter),
+    () => filterTimelineItems(timelineItems, timelineFilter),
     [timelineItems, timelineFilter]
   );
 
-  const filteredVendors = useMemo(() => {
-    const q = vendorSearch.trim().toLowerCase();
-    if (!q) return vendors;
-    return vendors.filter(
-      (v) =>
-        v.vendorName.toLowerCase().includes(q) ||
-        v.serviceType.toLowerCase().includes(q) ||
-        v.deliverableNotes.toLowerCase().includes(q)
-    );
-  }, [vendors, vendorSearch]);
+  const filteredVendors = useMemo(
+    () => filterVendors(vendors, vendorSearch),
+    [vendors, vendorSearch]
+  );
 
   // ===========================================================================
   // Render Top Bar Contract (Strict 3-Zone Header)

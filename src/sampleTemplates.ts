@@ -328,6 +328,13 @@ export const CURATED_PRESETS: Record<EventCategory, CuratedEventPreset> = {
           'Guests write a favorite memory with Maya on archival index cards pinned chronologically from 1987 to 2027.',
         estimatedCostImpact: '$140 archival paper & brass clips',
       },
+      {
+        title: 'Bespoke Vinyl Pressing Guestbook',
+        pillar: 'music_ritual',
+        description:
+          'Guests sign custom gatefold LP sleeves featuring Maya’s 40th supper club playlist curated with the live jazz trio.',
+        estimatedCostImpact: '$220 custom jacket printing',
+      },
     ],
   },
   community: {
@@ -432,6 +439,13 @@ export const CURATED_PRESETS: Record<EventCategory, CuratedEventPreset> = {
         description:
           'Attendees sponsor individual raised garden beds for neighborhood schools by pinning brass plant markers to an architectural site map.',
         estimatedCostImpact: '$350 materials (generates ~$8,000 in pledges)',
+      },
+      {
+        title: 'Zero-Waste Botanical Tasting Passport',
+        pillar: 'culinary',
+        description:
+          'Each guest receives a letterpress tasting card stamped at all five neighborhood culinary cooperative stations.',
+        estimatedCostImpact: '$280 recycled seed-paper printing',
       },
     ],
   },
