@@ -38,6 +38,7 @@ import {
   AlertTriangle,
   Wand2,
   Layers,
+  FileDown,
 } from 'lucide-react';
 import {
   auth,
@@ -76,6 +77,8 @@ import {
 } from './types';
 import { CURATED_PRESETS, CuratedEventPreset } from './sampleTemplates';
 import { EditorialIllustration } from './components/EditorialIllustration';
+import { ClientPdfModal } from './components/ClientPdfModal';
+import { generateClientPresentationPdf, PdfExportScope } from './utils/pdfExport';
 
 type WorkspaceTab = 'overview' | 'budget' | 'timeline' | 'vendors' | 'ai_collab';
 
@@ -138,6 +141,7 @@ export default function App() {
   // Modals / Drawers
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [pdfModalScope, setPdfModalScope] = useState<PdfExportScope | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [uiBanner, setUiBanner] = useState<{ type: 'info' | 'error'; text: string } | null>(null);
 
@@ -1566,6 +1570,35 @@ export default function App() {
     setTimeout(() => setCopiedInvite(false), 2500);
   };
 
+  const handleQuickExportPdf = (scope: PdfExportScope) => {
+    if (!activeEvent) return;
+    const filename = generateClientPresentationPdf(
+      activeEvent,
+      budgetItems,
+      timelineItems,
+      vendors,
+      guests,
+      {
+        scope,
+        preparedFor: `${activeEvent.title.split('—')[0].trim()} & Stakeholders`,
+        executiveMemo: activeEvent.styleBrief,
+        includeVendorSummary: true,
+        aiAuditSummary: aiBudgetAudit?.executiveSummary,
+      }
+    );
+    const label =
+      scope === 'combined'
+        ? 'Full Client Presentation PDF'
+        : scope === 'budget_only'
+        ? 'Budget Ledger PDF'
+        : 'Run-of-Show PDF';
+    emitActivityPulse(`exported ${label} (${filename})`);
+    setUiBanner({
+      type: 'info',
+      text: `Exported ${label}: ${filename}`,
+    });
+  };
+
   // Filtered collections
   const filteredBudgetItems = useMemo(
     () =>
@@ -2135,6 +2168,14 @@ export default function App() {
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                       <button
                         type="button"
+                        onClick={() => setPdfModalScope('combined')}
+                        className="px-3.5 py-2 text-xs font-medium bg-white border border-stone-300 text-stone-900 rounded-lg hover:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <FileDown className="w-3.5 h-3.5" />
+                        <span>Export Client PDF</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setActiveTab('ai_collab')}
                         className="px-4 py-2 text-xs font-medium bg-stone-900 text-stone-50 rounded-lg hover:bg-stone-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                       >
@@ -2445,19 +2486,36 @@ export default function App() {
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={aiAuditingBudget}
-                          onClick={handleRunBudgetAudit}
-                          className="px-4 py-2 text-xs font-medium bg-stone-900 text-stone-50 rounded-lg hover:bg-stone-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>
-                            {aiAuditingBudget
-                              ? 'Auditing Ledger...'
-                              : 'Run Gemini Financial Audit'}
-                          </span>
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickExportPdf('budget_only')}
+                            className="px-3.5 py-2 text-xs font-medium bg-white border border-stone-300 text-stone-900 rounded-lg hover:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                          >
+                            <FileDown className="w-3.5 h-3.5" />
+                            <span>Export Budget PDF</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPdfModalScope('combined')}
+                            className="px-3.5 py-2 text-xs font-medium bg-stone-100 text-stone-800 rounded-lg hover:bg-stone-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                          >
+                            Client Dossier Studio
+                          </button>
+                          <button
+                            type="button"
+                            disabled={aiAuditingBudget}
+                            onClick={handleRunBudgetAudit}
+                            className="px-4 py-2 text-xs font-medium bg-stone-900 text-stone-50 rounded-lg hover:bg-stone-800 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>
+                              {aiAuditingBudget
+                                ? 'Auditing Ledger...'
+                                : 'Run Gemini Financial Audit'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* AI Budget Audit Result Panel */}
@@ -2692,6 +2750,23 @@ export default function App() {
                           Synchronized across all coordinators and vendors · Click any status button
                           to advance from Upcoming to In Progress or Completed.
                         </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickExportPdf('timeline_only')}
+                          className="px-3.5 py-2 text-xs font-medium bg-white border border-stone-300 text-stone-900 rounded-lg hover:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          <FileDown className="w-3.5 h-3.5" />
+                          <span>Export Run-of-Show PDF</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPdfModalScope('combined')}
+                          className="px-3.5 py-2 text-xs font-medium bg-stone-900 text-stone-50 rounded-lg hover:bg-stone-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          Full Client Presentation PDF
+                        </button>
                       </div>
                     </div>
 
@@ -3556,6 +3631,36 @@ export default function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* Modal 3: Client Presentation & PDF Report Studio                      */}
+      {/* ===================================================================== */}
+      {activeEvent && pdfModalScope && (
+        <ClientPdfModal
+          isOpen={Boolean(pdfModalScope)}
+          initialScope={pdfModalScope}
+          onClose={() => setPdfModalScope(null)}
+          event={activeEvent}
+          budgetItems={budgetItems}
+          timelineItems={timelineItems}
+          vendors={vendors}
+          guests={guests}
+          aiAuditSummary={aiBudgetAudit?.executiveSummary}
+          onExportSuccess={(filename, scope) => {
+            const label =
+              scope === 'combined'
+                ? 'Full Client Dossier PDF'
+                : scope === 'budget_only'
+                ? 'Budget Ledger PDF'
+                : 'Run-of-Show PDF';
+            emitActivityPulse(`exported ${label} (${filename})`);
+            setUiBanner({
+              type: 'info',
+              text: `Downloaded client presentation report: ${filename}`,
+            });
+          }}
+        />
       )}
     </div>
   );
