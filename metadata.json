@@ -1,0 +1,6 @@
+{
+  "name": "Atelier Vela — Celebration & Event Planning Studio",
+  "description": "GenAI-powered celebration and event planning studio for weddings, milestone birthdays, and community events with real-time team collaboration, budget ledgers, production timelines, vendor checklists, and bespoke AI concept curation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

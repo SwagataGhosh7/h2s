@@ -1,0 +1,706 @@
+{
+  "entities": {
+    "EventPlan": {
+      "title": "EventPlan",
+      "description": "Core celebration or event record (wedding, birthday, or community event).",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Name of the celebration or event.",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of celebration.",
+          "enum": ["wedding", "birthday", "community"]
+        },
+        "eventDate": {
+          "type": "string",
+          "description": "ISO date string for the event.",
+          "minLength": 8,
+          "maxLength": 32
+        },
+        "location": {
+          "type": "string",
+          "description": "Venue or city name.",
+          "minLength": 2,
+          "maxLength": 140
+        },
+        "guestCountEstimate": {
+          "type": "number",
+          "description": "Estimated number of guests."
+        },
+        "totalBudgetLimit": {
+          "type": "number",
+          "description": "Total target budget in USD."
+        },
+        "styleBrief": {
+          "type": "string",
+          "description": "Aesthetic direction, mood, and vision notes.",
+          "minLength": 0,
+          "maxLength": 600
+        },
+        "inviteCode": {
+          "type": "string",
+          "description": "Short alphanumeric code used for team/guest collaboration.",
+          "minLength": 4,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status of the event.",
+          "enum": ["planning", "locked", "archived"]
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the event creator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Display name of the event creator.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs with access to this event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "title",
+        "category",
+        "eventDate",
+        "location",
+        "guestCountEstimate",
+        "totalBudgetLimit",
+        "styleBrief",
+        "inviteCode",
+        "status",
+        "ownerId",
+        "ownerName",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "EventMember": {
+      "title": "EventMember",
+      "description": "Collaborator or guest membership record under an event.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "Owner UID of the parent event.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID of the member.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the collaborator or guest.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "type": "string",
+          "description": "Role in the event workspace.",
+          "enum": ["owner", "planner", "guest"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when joined."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "userId",
+        "displayName",
+        "role",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BudgetItem": {
+      "title": "BudgetItem",
+      "description": "Budget line item tracking estimated and actual spend.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the user who created the item.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Expense item title.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Budget category.",
+          "enum": ["venue", "catering", "decor", "music", "attire", "logistics"]
+        },
+        "estimatedAmount": {
+          "type": "number",
+          "description": "Planned cost in USD."
+        },
+        "actualAmount": {
+          "type": "number",
+          "description": "Committed or paid cost in USD."
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "Payment state of this budget line.",
+          "enum": ["planned", "deposit_paid", "paid_in_full"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional context or vendor quote notes.",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "title",
+        "category",
+        "estimatedAmount",
+        "actualAmount",
+        "paymentStatus",
+        "notes",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TimelineItem": {
+      "title": "TimelineItem",
+      "description": "Milestone or run-of-show cue in the event timeline.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the user who created the item.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "timeSlot": {
+          "type": "string",
+          "description": "Scheduled time or lead-time milestone label.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "title": {
+          "type": "string",
+          "description": "Milestone or run-of-show activity title.",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "phase": {
+          "type": "string",
+          "description": "Phase of event execution.",
+          "enum": ["pre_event", "setup", "ceremony_main", "reception", "wrap_up"]
+        },
+        "leadPerson": {
+          "type": "string",
+          "description": "Person or team responsible.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "description": "Execution status of the timeline cue.",
+          "enum": ["upcoming", "in_progress", "completed"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Production details.",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "timeSlot",
+        "title",
+        "phase",
+        "leadPerson",
+        "status",
+        "notes",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "VendorItem": {
+      "title": "VendorItem",
+      "description": "Vendor checklist item tracking quotes, contracts, and deliverables.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the creator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "vendorName": {
+          "type": "string",
+          "description": "Vendor business or studio name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "serviceType": {
+          "type": "string",
+          "description": "Category of vendor service.",
+          "enum": ["venue", "catering", "floral_decor", "photography", "entertainment", "rentals"]
+        },
+        "contractStatus": {
+          "type": "string",
+          "description": "Vendor checklist stage.",
+          "enum": ["researching", "shortlisted", "contracted", "confirmed"]
+        },
+        "quotedPrice": {
+          "type": "number",
+          "description": "Vendor quote in USD."
+        },
+        "contactPerson": {
+          "type": "string",
+          "description": "Name of point of contact (no PII email/phone).",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "deliverableNotes": {
+          "type": "string",
+          "description": "Key deliverables, arrival window, and setup requirements.",
+          "minLength": 0,
+          "maxLength": 350
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "vendorName",
+        "serviceType",
+        "contractStatus",
+        "quotedPrice",
+        "contactPerson",
+        "deliverableNotes",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GuestEntry": {
+      "title": "GuestEntry",
+      "description": "Guest and team RSVP entry (without sensitive PII).",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the user who added this guest entry.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "guestName": {
+          "type": "string",
+          "description": "Display name of the guest or party.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "partySize": {
+          "type": "number",
+          "description": "Number of attendees in this party."
+        },
+        "rsvpStatus": {
+          "type": "string",
+          "description": "RSVP confirmation state.",
+          "enum": ["confirmed", "invited", "declined"]
+        },
+        "tableGroup": {
+          "type": "string",
+          "description": "Seating table or group assignment.",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "dietaryNotes": {
+          "type": "string",
+          "description": "Menu preference or dietary accommodation.",
+          "minLength": 0,
+          "maxLength": 160
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "guestName",
+        "partySize",
+        "rsvpStatus",
+        "tableGroup",
+        "dietaryNotes",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "IdeaCard": {
+      "title": "IdeaCard",
+      "description": "Personalized concept or GenAI-curated event idea saved to the board.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the user who saved or generated the idea.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of the user.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "description": "Headline of the personalized idea.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "pillar": {
+          "type": "string",
+          "description": "Creative pillar of the idea.",
+          "enum": ["atmosphere", "culinary", "guest_experience", "floral_lighting", "music_ritual"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed execution concept.",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "estimatedCostImpact": {
+          "type": "string",
+          "description": "Cost tier or budget impact note.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "votesCount": {
+          "type": "number",
+          "description": "Number of team approvals/endorsements."
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "authorName",
+        "title",
+        "pillar",
+        "description",
+        "estimatedCostImpact",
+        "votesCount",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CollabNote": {
+      "title": "CollabNote",
+      "description": "Real-time team and guest collaboration message or decision log entry.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Parent event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "eventOwnerId": {
+          "type": "string",
+          "description": "UID of the parent event owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the message author.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Display name of the message author.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "authorRole": {
+          "type": "string",
+          "description": "Role of the author.",
+          "enum": ["owner", "planner", "guest"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Collaboration note or update text.",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "topicTag": {
+          "type": "string",
+          "description": "Context topic for the message.",
+          "enum": ["general", "budget", "timeline", "vendors", "rsvp"]
+        },
+        "collaboratorUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of collaborator UIDs synced from event."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "eventId",
+        "eventOwnerId",
+        "authorId",
+        "authorName",
+        "authorRole",
+        "message",
+        "topicTag",
+        "collaboratorUids",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/EventPlan" },
+      "description": "Primary event plans created by users and shared with up to 10 collaborators."
+    },
+    "/events/{eventId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/EventMember" },
+      "description": "Subcollection of team members and guests participating in an event."
+    },
+    "/events/{eventId}/budgetItems/{itemId}": {
+      "schema": { "$ref": "#/entities/BudgetItem" },
+      "description": "Subcollection of budget line items for an event."
+    },
+    "/events/{eventId}/timelineItems/{itemId}": {
+      "schema": { "$ref": "#/entities/TimelineItem" },
+      "description": "Subcollection of production timeline milestones and run-of-show cues."
+    },
+    "/events/{eventId}/vendors/{vendorId}": {
+      "schema": { "$ref": "#/entities/VendorItem" },
+      "description": "Subcollection of vendor checklists, quotes, and contract statuses."
+    },
+    "/events/{eventId}/guests/{guestId}": {
+      "schema": { "$ref": "#/entities/GuestEntry" },
+      "description": "Subcollection of guest RSVP entries and seating groups."
+    },
+    "/events/{eventId}/ideas/{ideaId}": {
+      "schema": { "$ref": "#/entities/IdeaCard" },
+      "description": "Subcollection of AI-generated and team-curated event concept cards."
+    },
+    "/events/{eventId}/collabNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/CollabNote" },
+      "description": "Subcollection of real-time team and guest collaboration notes."
+    }
+  }
+}

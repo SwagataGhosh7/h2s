@@ -1,0 +1,718 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Phase 3: Hardened Global Helpers
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidCollaboratorList(listVal) {
+      return listVal is list &&
+        listVal.size() <= 10 &&
+        (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() >= 1 && listVal[0].size() <= 128));
+    }
+
+    function parentEvent(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId)).data;
+    }
+
+    function parentEventExists(eventId) {
+      return exists(/databases/$(database)/documents/events/$(eventId));
+    }
+
+    function isParentEventMember(eventId) {
+      let ev = parentEvent(eventId);
+      return ev.ownerId == request.auth.uid || (ev.collaboratorUids is list && request.auth.uid in ev.collaboratorUids);
+    }
+
+    function isParentEventActive(eventId) {
+      return parentEvent(eventId).status != 'archived';
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Anti-Update-Gap)
+    // =========================================================================
+    function isValidEventPlan(data) {
+      return data.keys().hasAll([
+          'title', 'category', 'eventDate', 'location', 'guestCountEstimate',
+          'totalBudgetLimit', 'styleBrief', 'inviteCode', 'status',
+          'ownerId', 'ownerName', 'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'category', 'eventDate', 'location', 'guestCountEstimate',
+          'totalBudgetLimit', 'styleBrief', 'inviteCode', 'status',
+          'ownerId', 'ownerName', 'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.category is string && data.category in ['wedding', 'birthday', 'community'] &&
+        data.eventDate is string && data.eventDate.size() >= 8 && data.eventDate.size() <= 32 &&
+        data.location is string && data.location.size() >= 2 && data.location.size() <= 140 &&
+        data.guestCountEstimate is number && data.guestCountEstimate >= 1 && data.guestCountEstimate <= 100000 &&
+        data.totalBudgetLimit is number && data.totalBudgetLimit >= 0 && data.totalBudgetLimit <= 100000000 &&
+        data.styleBrief is string && data.styleBrief.size() <= 600 &&
+        data.inviteCode is string && data.inviteCode.size() >= 4 && data.inviteCode.size() <= 32 && data.inviteCode.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.status is string && data.status in ['planning', 'locked', 'archived'] &&
+        isValidId(data.ownerId) &&
+        data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 80 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidEventMember(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'userId', 'displayName', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'userId', 'displayName', 'role', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.userId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.role is string && data.role in ['owner', 'planner', 'guest'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBudgetItem(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'title', 'category',
+          'estimatedAmount', 'actualAmount', 'paymentStatus', 'notes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'title', 'category',
+          'estimatedAmount', 'actualAmount', 'paymentStatus', 'notes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.category is string && data.category in ['venue', 'catering', 'decor', 'music', 'attire', 'logistics'] &&
+        data.estimatedAmount is number && data.estimatedAmount >= 0 && data.estimatedAmount <= 100000000 &&
+        data.actualAmount is number && data.actualAmount >= 0 && data.actualAmount <= 100000000 &&
+        data.paymentStatus is string && data.paymentStatus in ['planned', 'deposit_paid', 'paid_in_full'] &&
+        data.notes is string && data.notes.size() <= 300 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTimelineItem(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'timeSlot', 'title',
+          'phase', 'leadPerson', 'status', 'notes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'timeSlot', 'title',
+          'phase', 'leadPerson', 'status', 'notes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.timeSlot is string && data.timeSlot.size() >= 1 && data.timeSlot.size() <= 60 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.phase is string && data.phase in ['pre_event', 'setup', 'ceremony_main', 'reception', 'wrap_up'] &&
+        data.leadPerson is string && data.leadPerson.size() >= 1 && data.leadPerson.size() <= 80 &&
+        data.status is string && data.status in ['upcoming', 'in_progress', 'completed'] &&
+        data.notes is string && data.notes.size() <= 300 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidVendorItem(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'vendorName', 'serviceType',
+          'contractStatus', 'quotedPrice', 'contactPerson', 'deliverableNotes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'vendorName', 'serviceType',
+          'contractStatus', 'quotedPrice', 'contactPerson', 'deliverableNotes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.vendorName is string && data.vendorName.size() >= 1 && data.vendorName.size() <= 120 &&
+        data.serviceType is string && data.serviceType in ['venue', 'catering', 'floral_decor', 'photography', 'entertainment', 'rentals'] &&
+        data.contractStatus is string && data.contractStatus in ['researching', 'shortlisted', 'contracted', 'confirmed'] &&
+        data.quotedPrice is number && data.quotedPrice >= 0 && data.quotedPrice <= 100000000 &&
+        data.contactPerson is string && data.contactPerson.size() <= 80 &&
+        data.deliverableNotes is string && data.deliverableNotes.size() <= 350 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGuestEntry(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'guestName', 'partySize',
+          'rsvpStatus', 'tableGroup', 'dietaryNotes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'guestName', 'partySize',
+          'rsvpStatus', 'tableGroup', 'dietaryNotes',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.guestName is string && data.guestName.size() >= 1 && data.guestName.size() <= 100 &&
+        data.partySize is number && data.partySize >= 1 && data.partySize <= 50 &&
+        data.rsvpStatus is string && data.rsvpStatus in ['confirmed', 'invited', 'declined'] &&
+        data.tableGroup is string && data.tableGroup.size() <= 60 &&
+        data.dietaryNotes is string && data.dietaryNotes.size() <= 160 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidIdeaCard(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'authorName', 'title',
+          'pillar', 'description', 'estimatedCostImpact', 'votesCount',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'authorName', 'title',
+          'pillar', 'description', 'estimatedCostImpact', 'votesCount',
+          'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.pillar is string && data.pillar in ['atmosphere', 'culinary', 'guest_experience', 'floral_lighting', 'music_ritual'] &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
+        data.estimatedCostImpact is string && data.estimatedCostImpact.size() >= 1 && data.estimatedCostImpact.size() <= 80 &&
+        data.votesCount is number && data.votesCount >= 0 && data.votesCount <= 10000 &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCollabNote(data) {
+      return data.keys().hasAll([
+          'eventId', 'eventOwnerId', 'authorId', 'authorName', 'authorRole',
+          'message', 'topicTag', 'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'eventId', 'eventOwnerId', 'authorId', 'authorName', 'authorRole',
+          'message', 'topicTag', 'collaboratorUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.eventId) &&
+        isValidId(data.eventOwnerId) &&
+        isValidId(data.authorId) &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+        data.authorRole is string && data.authorRole in ['owner', 'planner', 'guest'] &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 400 &&
+        data.topicTag is string && data.topicTag in ['general', 'budget', 'timeline', 'vendors', 'rsvp'] &&
+        isValidCollaboratorList(data.collaboratorUids) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection: /events/{eventId}
+    // =========================================================================
+    match /events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && (
+        existing().ownerId == request.auth.uid ||
+        (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids) ||
+        existing().status != 'archived'
+      );
+
+      allow list: if isSignedIn() && (
+        existing().ownerId == request.auth.uid ||
+        (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(eventId) &&
+        isValidEventPlan(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().status == 'planning' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(eventId) &&
+        isValidEventPlan(incoming()) &&
+        existing().status != 'archived' &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().inviteCode == existing().inviteCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Owner updates core event details or status
+          (existing().ownerId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'category', 'eventDate', 'location', 'guestCountEstimate',
+              'totalBudgetLimit', 'styleBrief', 'status', 'collaboratorUids', 'updatedAt'
+            ])
+          ) ||
+          // Action 2a: Self-join as collaborator (preserving existing collaborators and adding only request.auth.uid)
+          (incoming().status == existing().status &&
+            request.auth.uid in incoming().collaboratorUids &&
+            incoming().collaboratorUids.hasAll(existing().collaboratorUids) &&
+            incoming().collaboratorUids.size() == existing().collaboratorUids.size() + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['collaboratorUids', 'updatedAt'])
+          ) ||
+          // Action 2b: Existing collaborator updates styleBrief
+          (incoming().status == existing().status &&
+            existing().collaboratorUids is list &&
+            request.auth.uid in existing().collaboratorUids &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['styleBrief', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(eventId) &&
+        existing().ownerId == request.auth.uid;
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/members/{memberId}
+      // =======================================================================
+      match /members/{memberId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(memberId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().userId == request.auth.uid
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(memberId) &&
+          isValidEventMember(incoming()) &&
+          memberId == request.auth.uid &&
+          incoming().userId == request.auth.uid &&
+          incoming().eventId == eventId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId &&
+          (
+            (incoming().role == 'owner' && parentEvent(eventId).ownerId == request.auth.uid) ||
+            (incoming().role in ['planner', 'guest'])
+          );
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(memberId) &&
+          isValidEventMember(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            // Action 1: Member updates own display name
+            (existing().userId == request.auth.uid &&
+              incoming().role == existing().role &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+            ) ||
+            // Action 2: Event owner updates member role (between planner and guest)
+            (parentEvent(eventId).ownerId == request.auth.uid &&
+              incoming().role in ['planner', 'guest'] &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])
+            )
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(memberId) &&
+          parentEventExists(eventId) && (
+            existing().userId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/budgetItems/{itemId}
+      // =======================================================================
+      match /budgetItems/{itemId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(itemId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          isValidBudgetItem(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          isValidBudgetItem(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) && (
+            // Tier 1: Event owner or item creator updates full item details
+            ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'title', 'category', 'estimatedAmount', 'actualAmount', 'paymentStatus', 'notes', 'collaboratorUids', 'updatedAt'
+              ])
+            ) ||
+            // Tier 2: Collaborator updates paymentStatus, actualAmount, or notes
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'actualAmount', 'paymentStatus', 'notes', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/timelineItems/{itemId}
+      // =======================================================================
+      match /timelineItems/{itemId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(itemId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          isValidTimelineItem(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          isValidTimelineItem(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) && (
+            // Tier 1: Owner or author modifies full cue
+            ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'timeSlot', 'title', 'phase', 'leadPerson', 'status', 'notes', 'collaboratorUids', 'updatedAt'
+              ])
+            ) ||
+            // Tier 2: Collaborator toggles status or updates notes
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'notes', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(itemId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/vendors/{vendorId}
+      // =======================================================================
+      match /vendors/{vendorId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(vendorId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(vendorId) &&
+          isValidVendorItem(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(vendorId) &&
+          isValidVendorItem(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) && (
+            // Tier 1: Owner or author modifies full vendor item
+            ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'vendorName', 'serviceType', 'contractStatus', 'quotedPrice', 'contactPerson', 'deliverableNotes', 'collaboratorUids', 'updatedAt'
+              ])
+            ) ||
+            // Tier 2: Collaborator advances contractStatus or deliverableNotes
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'contractStatus', 'deliverableNotes', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(vendorId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/guests/{guestId}
+      // =======================================================================
+      match /guests/{guestId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(guestId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(guestId) &&
+          isValidGuestEntry(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(guestId) &&
+          isValidGuestEntry(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) && (
+            // Tier 1: Owner or author modifies full guest record
+            ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'guestName', 'partySize', 'rsvpStatus', 'tableGroup', 'dietaryNotes', 'collaboratorUids', 'updatedAt'
+              ])
+            ) ||
+            // Tier 2: Collaborator/guest updates rsvpStatus, tableGroup, or dietaryNotes
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'rsvpStatus', 'tableGroup', 'dietaryNotes', 'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(guestId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/ideas/{ideaId}
+      // =======================================================================
+      match /ideas/{ideaId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(ideaId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(ideaId) &&
+          isValidIdeaCard(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(ideaId) &&
+          isValidIdeaCard(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().authorName == existing().authorName &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) && (
+            // Action 1: Upvote / endorse idea
+            incoming().diff(existing()).affectedKeys().hasOnly(['votesCount', 'updatedAt']) ||
+            // Action 2: Author or owner edits idea details
+            ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'title', 'pillar', 'description', 'estimatedCostImpact', 'votesCount', 'collaboratorUids', 'updatedAt'
+              ])
+            )
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(ideaId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+
+      // =======================================================================
+      // Subcollection: /events/{eventId}/collabNotes/{noteId}
+      // =======================================================================
+      match /collabNotes/{noteId} {
+        allow get: if isSignedIn() && isValidId(eventId) && isValidId(noteId) &&
+          parentEventExists(eventId) && isParentEventMember(eventId);
+
+        allow list: if isSignedIn() && (
+          existing().eventOwnerId == request.auth.uid ||
+          existing().authorId == request.auth.uid ||
+          (existing().collaboratorUids is list && request.auth.uid in existing().collaboratorUids)
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(noteId) &&
+          isValidCollabNote(incoming()) &&
+          incoming().eventId == eventId &&
+          incoming().authorId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          isParentEventMember(eventId) &&
+          incoming().eventOwnerId == parentEvent(eventId).ownerId;
+
+        allow update: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(noteId) &&
+          isValidCollabNote(incoming()) &&
+          incoming().eventId == existing().eventId &&
+          incoming().eventOwnerId == existing().eventOwnerId &&
+          incoming().authorId == existing().authorId &&
+          incoming().authorName == existing().authorName &&
+          incoming().authorRole == existing().authorRole &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) &&
+          existing().authorId == request.auth.uid &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['message', 'topicTag', 'updatedAt']);
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(eventId) &&
+          isValidId(noteId) &&
+          parentEventExists(eventId) &&
+          isParentEventActive(eventId) && (
+            existing().authorId == request.auth.uid ||
+            parentEvent(eventId).ownerId == request.auth.uid
+          );
+      }
+    }
+  }
+}
