@@ -3,6 +3,18 @@ import { Timestamp } from 'firebase/firestore';
 export type EventCategory = 'wedding' | 'birthday' | 'community';
 export type EventStatus = 'planning' | 'locked' | 'archived';
 
+export interface UserProfile {
+  userId: string;
+  displayName: string;
+  studioTitle: string;
+  specialty: EventCategory;
+  locationCity: string;
+  bio: string;
+  preferredCurrency: 'USD' | 'EUR' | 'GBP';
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 export interface EventPlan {
   id: string;
   title: string;
@@ -180,6 +192,9 @@ export const BLUEPRINT_CONSTRAINTS = {
   INVITE_CODE_MIN: 4,
   INVITE_CODE_MAX: 32,
   OWNER_NAME_MAX: 80,
+  PROFILE_TITLE_MAX: 100,
+  PROFILE_CITY_MAX: 100,
+  PROFILE_BIO_MAX: 400,
   BUDGET_TITLE_MAX: 120,
   BUDGET_NOTES_MAX: 300,
   TIMELINE_SLOT_MAX: 60,

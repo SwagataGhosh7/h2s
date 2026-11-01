@@ -16,7 +16,10 @@ service cloud.firestore {
     }
 
     function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == 'password'
+      );
     }
 
     function incoming() {
@@ -57,6 +60,26 @@ service cloud.firestore {
     // =========================================================================
     // Validation Blueprints (Anti-Update-Gap)
     // =========================================================================
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'userId', 'displayName', 'studioTitle', 'specialty',
+          'locationCity', 'bio', 'preferredCurrency', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'displayName', 'studioTitle', 'specialty',
+          'locationCity', 'bio', 'preferredCurrency', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.studioTitle is string && data.studioTitle.size() >= 1 && data.studioTitle.size() <= 100 &&
+        data.specialty is string && data.specialty in ['wedding', 'birthday', 'community'] &&
+        data.locationCity is string && data.locationCity.size() <= 100 &&
+        data.bio is string && data.bio.size() <= 400 &&
+        data.preferredCurrency is string && data.preferredCurrency in ['USD', 'EUR', 'GBP'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     function isValidEventPlan(data) {
       return data.keys().hasAll([
           'title', 'category', 'eventDate', 'location', 'guestCountEstimate',
@@ -246,6 +269,37 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // Collection: /users/{userId} (Planner Profile Dashboard)
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserProfile(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserProfile(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'studioTitle', 'specialty', 'locationCity', 'bio', 'preferredCurrency', 'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(userId) &&
+        userId == request.auth.uid;
+    }
+
+    // =========================================================================
     // Collection: /events/{eventId}
     // =========================================================================
     match /events/{eventId} {
@@ -342,12 +396,10 @@ service cloud.firestore {
           incoming().updatedAt == request.time &&
           parentEventExists(eventId) &&
           isParentEventActive(eventId) && (
-            // Action 1: Member updates own display name
             (existing().userId == request.auth.uid &&
               incoming().role == existing().role &&
               incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
             ) ||
-            // Action 2: Event owner updates member role (between planner and guest)
             (parentEvent(eventId).ownerId == request.auth.uid &&
               incoming().role in ['planner', 'guest'] &&
               incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt'])
@@ -401,13 +453,11 @@ service cloud.firestore {
           parentEventExists(eventId) &&
           isParentEventActive(eventId) &&
           isParentEventMember(eventId) && (
-            // Tier 1: Event owner or item creator updates full item details
             ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'title', 'category', 'estimatedAmount', 'actualAmount', 'paymentStatus', 'notes', 'collaboratorUids', 'updatedAt'
               ])
             ) ||
-            // Tier 2: Collaborator updates paymentStatus, actualAmount, or notes
             incoming().diff(existing()).affectedKeys().hasOnly([
               'actualAmount', 'paymentStatus', 'notes', 'updatedAt'
             ])
@@ -461,13 +511,11 @@ service cloud.firestore {
           parentEventExists(eventId) &&
           isParentEventActive(eventId) &&
           isParentEventMember(eventId) && (
-            // Tier 1: Owner or author modifies full cue
             ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'timeSlot', 'title', 'phase', 'leadPerson', 'status', 'notes', 'collaboratorUids', 'updatedAt'
               ])
             ) ||
-            // Tier 2: Collaborator toggles status or updates notes
             incoming().diff(existing()).affectedKeys().hasOnly([
               'status', 'notes', 'updatedAt'
             ])
@@ -521,13 +569,11 @@ service cloud.firestore {
           parentEventExists(eventId) &&
           isParentEventActive(eventId) &&
           isParentEventMember(eventId) && (
-            // Tier 1: Owner or author modifies full vendor item
             ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'vendorName', 'serviceType', 'contractStatus', 'quotedPrice', 'contactPerson', 'deliverableNotes', 'collaboratorUids', 'updatedAt'
               ])
             ) ||
-            // Tier 2: Collaborator advances contractStatus or deliverableNotes
             incoming().diff(existing()).affectedKeys().hasOnly([
               'contractStatus', 'deliverableNotes', 'updatedAt'
             ])
@@ -581,13 +627,11 @@ service cloud.firestore {
           parentEventExists(eventId) &&
           isParentEventActive(eventId) &&
           isParentEventMember(eventId) && (
-            // Tier 1: Owner or author modifies full guest record
             ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'guestName', 'partySize', 'rsvpStatus', 'tableGroup', 'dietaryNotes', 'collaboratorUids', 'updatedAt'
               ])
             ) ||
-            // Tier 2: Collaborator/guest updates rsvpStatus, tableGroup, or dietaryNotes
             incoming().diff(existing()).affectedKeys().hasOnly([
               'rsvpStatus', 'tableGroup', 'dietaryNotes', 'updatedAt'
             ])
@@ -642,9 +686,7 @@ service cloud.firestore {
           parentEventExists(eventId) &&
           isParentEventActive(eventId) &&
           isParentEventMember(eventId) && (
-            // Action 1: Upvote / endorse idea
             incoming().diff(existing()).affectedKeys().hasOnly(['votesCount', 'updatedAt']) ||
-            // Action 2: Author or owner edits idea details
             ((existing().eventOwnerId == request.auth.uid || existing().authorId == request.auth.uid) &&
               incoming().diff(existing()).affectedKeys().hasOnly([
                 'title', 'pillar', 'description', 'estimatedCostImpact', 'votesCount', 'collaboratorUids', 'updatedAt'

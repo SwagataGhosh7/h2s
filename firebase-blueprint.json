@@ -1,5 +1,74 @@
 {
   "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Planner profile settings and studio metadata (isolated per user, no sensitive PII).",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID matching the document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public planner or host display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "studioTitle": {
+          "type": "string",
+          "description": "Role or studio title (e.g. Executive Event Producer).",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "specialty": {
+          "type": "string",
+          "description": "Primary event specialization.",
+          "enum": ["wedding", "birthday", "community"]
+        },
+        "locationCity": {
+          "type": "string",
+          "description": "Primary city or region (non-sensitive).",
+          "minLength": 0,
+          "maxLength": 100
+        },
+        "bio": {
+          "type": "string",
+          "description": "Planner bio and creative philosophy.",
+          "minLength": 0,
+          "maxLength": 400
+        },
+        "preferredCurrency": {
+          "type": "string",
+          "description": "Preferred display currency code.",
+          "enum": ["USD", "EUR", "GBP"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of profile creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last profile update."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "studioTitle",
+        "specialty",
+        "locationCity",
+        "bio",
+        "preferredCurrency",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
     "EventPlan": {
       "title": "EventPlan",
       "description": "Core celebration or event record (wedding, birthday, or community event).",
@@ -670,6 +739,10 @@
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Individual planner profile documents isolated strictly to the profile owner."
+    },
     "/events/{eventId}": {
       "schema": { "$ref": "#/entities/EventPlan" },
       "description": "Primary event plans created by users and shared with up to 10 collaborators."

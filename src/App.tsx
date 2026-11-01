@@ -78,9 +78,11 @@ import {
 import { CURATED_PRESETS, CuratedEventPreset } from './sampleTemplates';
 import { EditorialIllustration } from './components/EditorialIllustration';
 import { ClientPdfModal } from './components/ClientPdfModal';
+import { AuthModal } from './components/AuthModal';
+import { ProfileDashboard } from './components/ProfileDashboard';
 import { generateClientPresentationPdf, PdfExportScope } from './utils/pdfExport';
 
-type WorkspaceTab = 'overview' | 'budget' | 'timeline' | 'vendors' | 'ai_collab';
+type WorkspaceTab = 'overview' | 'budget' | 'timeline' | 'vendors' | 'ai_collab' | 'profile';
 
 const CATEGORY_LABELS: Record<EventCategory, string> = {
   wedding: 'Wedding Celebration',
@@ -141,6 +143,7 @@ export default function App() {
   // Modals / Drawers
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [pdfModalScope, setPdfModalScope] = useState<PdfExportScope | null>(null);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [uiBanner, setUiBanner] = useState<{ type: 'info' | 'error'; text: string } | null>(null);
@@ -1709,10 +1712,10 @@ export default function App() {
           {!user ? (
             <button
               type="button"
-              onClick={signInWithGoogle}
+              onClick={() => setShowAuthModal(true)}
               className="px-4 py-2 text-xs font-medium text-stone-50 bg-stone-900 rounded-lg hover:bg-stone-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              Sign In with Google
+              Studio Sign In
             </button>
           ) : (
             <button
@@ -1777,14 +1780,14 @@ export default function App() {
               <div className="flex flex-wrap items-center gap-4 pt-2">
                 <button
                   type="button"
-                  onClick={signInWithGoogle}
+                  onClick={() => setShowAuthModal(true)}
                   className="px-6 py-3 text-sm font-medium text-stone-50 bg-stone-900 rounded-lg hover:bg-stone-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-2"
                 >
-                  <span>Continue with Google to Start Planning</span>
+                  <span>Sign In or Create Planner Account</span>
                   <ArrowUpRight className="w-4 h-4" />
                 </button>
                 <span className="text-xs text-stone-500">
-                  Instant cloud sync via Firestore · Live team rooms · Zero setup required
+                  Google or Email Auth · Instant Firestore sync · Planner Profile Dashboard
                 </span>
               </div>
             </div>
@@ -1845,7 +1848,7 @@ export default function App() {
                       </div>
                       <button
                         type="button"
-                        onClick={signInWithGoogle}
+                        onClick={() => setShowAuthModal(true)}
                         className="w-full py-2 px-4 text-xs font-medium text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                       >
                         Sign In to Launch Template
@@ -1949,6 +1952,7 @@ export default function App() {
                     { id: 'timeline', label: '03. Run-of-Show Timeline' },
                     { id: 'vendors', label: '04. Vendor Checklist' },
                     { id: 'ai_collab', label: '05. AI Studio & Team' },
+                    { id: 'profile', label: '06. Planner Profile' },
                   ] as { id: WorkspaceTab; label: string }[]
                 ).map((tab) => (
                   <button
@@ -2038,12 +2042,19 @@ export default function App() {
 
             {/* Signed-In User Account Footer */}
             <div className="pt-4 border-t border-stone-200 flex items-center justify-between gap-2">
-              <div className="truncate">
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className="truncate text-left flex-1 py-1 px-2 -ml-2 rounded-lg hover:bg-stone-200/60 transition-colors cursor-pointer"
+                title="Open Planner Profile Dashboard"
+              >
                 <div className="text-xs font-medium text-stone-900 truncate">
-                  {user.displayName || 'Planner'}
+                  {user.displayName || user.email?.split('@')[0] || 'Planner'}
                 </div>
-                <div className="text-[11px] text-stone-500 truncate">Verified Studio Session</div>
-              </div>
+                <div className="text-[11px] text-stone-500 truncate">
+                  View Profile Dashboard →
+                </div>
+              </button>
               <button
                 type="button"
                 onClick={signOutUser}
@@ -2057,7 +2068,19 @@ export default function App() {
 
           {/* Main Workspace Viewport */}
           <main className="flex-1 p-6 lg:p-10 space-y-8 overflow-y-auto">
-            {!activeEvent ? (
+            {activeTab === 'profile' ? (
+              <ProfileDashboard
+                user={user}
+                events={events}
+                activeEventId={activeEvent?.id ?? null}
+                onSelectEvent={(eventId) => {
+                  setSelectedEventId(eventId);
+                  setActiveTab('overview');
+                }}
+                onOpenCreateModal={() => setShowCreateModal(true)}
+                onOpenJoinModal={() => setShowJoinModal(true)}
+              />
+            ) : !activeEvent ? (
               /* Empty State with 1-Click Preset Seeding & AI Generator */
               <div className="bg-white border border-stone-200 rounded-xl p-8 lg:p-12 space-y-8">
                 <div className="max-w-2xl space-y-3">
@@ -3662,6 +3685,20 @@ export default function App() {
           }}
         />
       )}
+
+      {/* ===================================================================== */}
+      {/* Modal 4: Firebase Studio Authentication (Google + Email/Password)     */}
+      {/* ===================================================================== */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() =>
+          setUiBanner({
+            type: 'info',
+            text: 'Authenticated with Atelier Vela Studio. Open 06. Planner Profile in the sidebar to customize your credentials.',
+          })
+        }
+      />
     </div>
   );
 }

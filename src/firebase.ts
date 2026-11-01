@@ -1,10 +1,42 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAnalytics, isSupported as isAnalyticsSupported, Analytics } from 'firebase/analytics';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut,
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const firebaseConfig = {
+  apiKey: 'AIzaSyB15dBeuL1eDZnhVj5uIX1qwK75uPDkpGI',
+  authDomain: 'date-87c48.firebaseapp.com',
+  projectId: 'date-87c48',
+  storageBucket: 'date-87c48.firebasestorage.app',
+  messagingSenderId: '532583969643',
+  appId: '1:532583969643:web:3681a6aea4f055ee4c522e',
+  measurementId: 'G-LVD44QLSFM',
+};
+
+export const app = initializeApp(firebaseConfig);
+
+export let analytics: Analytics | null = null;
+if (typeof window !== 'undefined') {
+  isAnalyticsSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch(() => {
+      // Ignore analytics initialization errors in restricted iframe contexts
+    });
+}
+
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -74,6 +106,27 @@ testConnection();
 
 export async function signInWithGoogle() {
   return signInWithPopup(auth, googleProvider);
+}
+
+export async function signInWithEmail(email: string, password: string) {
+  return signInWithEmailAndPassword(auth, email.trim(), password);
+}
+
+export async function registerWithEmail(
+  displayName: string,
+  email: string,
+  password: string
+) {
+  const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  if (displayName.trim()) {
+    await updateProfile(cred.user, { displayName: displayName.trim() });
+  }
+  return cred;
+}
+
+export async function updateAuthDisplayName(newDisplayName: string) {
+  if (!auth.currentUser) return;
+  await updateProfile(auth.currentUser, { displayName: newDisplayName.trim() });
 }
 
 export async function signOutUser() {
